@@ -5,6 +5,7 @@ Built-in addresses (n = fixture number, 1-based, in the order shown in the Fixtu
   /martin/blackout              i  0 or 1
   /martin/master                f  master dimmer, 0.0-1.0
   /martin/scene                 i  recall the scene with this ID (every message recalls it)
+  /martin/scene/fade            f  fade time in seconds for scene recalls (0 = instant)
   /martin/playlist/next         -  next playlist item
   /martin/playlist/prev         -  previous playlist item
   /martin/playlist/go           i  play playlist item at this position (0 = first)
@@ -126,6 +127,9 @@ class OscServer:
             return
         if self._scenes is not None and parts[1:] == ["scene"] and args:
             self._scenes.recall(int(args[0]))
+            return
+        if self._scenes is not None and parts[1:] == ["scene", "fade"] and args:
+            self._scenes.fade_time = max(0.0, float(args[0]))
             return
         if self._scenes is not None and parts[1:] == ["playlist", "next"]:
             self._scenes.step(1)

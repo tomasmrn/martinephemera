@@ -32,6 +32,7 @@ class Settings:
     master: float = 1.0                                       # master dimmer, 0.0-1.0
     scenes: list[Scene] = field(default_factory=list)         # saved looks, by ID
     playlist: list[PlaylistItem] = field(default_factory=list)  # playback order
+    fade_time: float = 0.0                                    # seconds to fade into a scene; 0 = instant
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +43,7 @@ class Settings:
             "master": self.master,
             "scenes": [s.to_dict() for s in self.scenes],
             "playlist": [item.to_dict() for item in self.playlist],
+            "fade_time": self.fade_time,
         }
 
     @classmethod
@@ -52,7 +54,8 @@ class Settings:
         scenes = [Scene.from_dict(s) for s in data.get("scenes", [])]
         playlist = [PlaylistItem.from_dict(item) for item in data.get("playlist", [])]
         return cls(network=network, fixtures=fixtures, presets=data.get("presets", {}), mappings=mappings,
-                   master=float(data.get("master", 1.0)), scenes=scenes, playlist=playlist)
+                   master=float(data.get("master", 1.0)), scenes=scenes, playlist=playlist,
+                   fade_time=max(0.0, float(data.get("fade_time", 0.0))))
 
 
 def load_settings(path: Path = SETTINGS_PATH) -> Settings:

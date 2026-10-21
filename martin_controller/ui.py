@@ -5,9 +5,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QListWidgetItem,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -46,7 +47,9 @@ from .effects import COLOR_PRESET_NAMES, FX_GROUPS, FX_NAMES
 from .engine import DmxEngine
 from .fixture import Fixture, FixtureState
 from .mapping import PARAMETERS, Mapping, MappingTable
+from .preview import FixturePreview
 from .osc_server import OscServer
+from .presets import describe, make_preset, preset_state, swatch_hex
 from .scenes import MAX_SCENE_ID, PlaylistItem, SceneManager
 from .preview import FixturePreview, speed_text
 
@@ -538,6 +541,17 @@ class MainWindow(QMainWindow):
         self.scene_name_edit.setPlaceholderText("Name (optional)")
         form.addRow("Scene ID", self.scene_id_spin)
         form.addRow("Name", self.scene_name_edit)
+        self.fade_spin = QDoubleSpinBox()
+        self.fade_spin.setRange(0, 120)
+        self.fade_spin.setDecimals(1)
+        self.fade_spin.setSuffix(" s")
+        self.fade_spin.setToolTip(
+            "Crossfade for direct recalls (the Recall button and /martin/scene). "
+            "Playlist items have their own fade time."
+        )
+        self.fade_spin.setValue(self._scenes.fade_time)
+        self.fade_spin.valueChanged.connect(self._on_fade_changed)
+        form.addRow("Fade (direct)", self.fade_spin)
         vbox.addLayout(form)
 
         row = QHBoxLayout()
@@ -567,14 +581,21 @@ class MainWindow(QMainWindow):
         self.playlist_hold.setDecimals(1)
         self.playlist_hold.setSuffix(" s")
         self.playlist_hold.setToolTip("Time before auto-advance. 0 = wait for Next.")
+        self.playlist_fade = QDoubleSpinBox()
+        self.playlist_fade.setRange(0, 120)
+        self.playlist_fade.setDecimals(1)
+        self.playlist_fade.setSuffix(" s")
+        self.playlist_fade.setToolTip("Crossfade into this scene. 0 = cut straight to it.")
         form.addRow("Scene", self.playlist_scene_combo)
         form.addRow("Hold", self.playlist_hold)
+        form.addRow("Fade", self.playlist_fade)
+        self.playlist_list.currentRowChanged.connect(self._load_playlist_row)
         vbox.addLayout(form)
 
         edit = QHBoxLayout()
         for label, handler in (
             ("Add", self._playlist_add),
-            ("Update hold", self._playlist_update_hold),
+            ("Update", self._playlist_update),
             ("Remove", self._playlist_remove),
             ("Up", lambda: self._playlist_move(-1)),
             ("Down", lambda: self._playlist_move(1)),
@@ -618,7 +639,18 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QHBoxLayout(page)
         self.preset_list = QListWidget()
+        self.preset_list.setIconSize(QPixmap(14, 14).size())
+        self.preset_list.currentItemChanged.connect(lambda cur, _prev: self._show_preset(cur))
         layout.addWidget(self.preset_list, 1)
+
+        details = QVBoxLayout()
+        self.preset_preview = FixturePreview()
+        self.preset_details = QLabel("Select a preset to see its details.")
+        self.preset_details.setWordWrap(True)
+        self.preset_details.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        details.addWidget(self.preset_preview)
+        details.addWidget(self.preset_details, 1)
+        layout.addLayout(details, 2)
 
         buttons = QVBoxLayout()
         for label, handler in (
@@ -923,24 +955,45 @@ class MainWindow(QMainWindow):
 
     # --- presets ---------------------------------------------------------------
 
-    def _refresh_presets(self) -> None:
+    def _refresh_presets(self, select: str | None = None) -> None:
         self.preset_list.clear()
-        self.preset_list.addItems(sorted(self._settings.presets))
+        for name in sorted(self._settings.presets):
+            item = QListWidgetItem(self._swatch_icon(self._settings.presets[name]), name)
+            self.preset_list.addItem(item)
+            if name == select:
+                self.preset_list.setCurrentItem(item)
+        if self.preset_list.currentItem() is None:
+            self._show_preset(None)
+
+    def _swatch_icon(self, data: dict) -> QIcon:
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(QColor(swatch_hex(data)))
+        return QIcon(pixmap)
+
+    def _show_preset(self, item) -> None:
+        if item is None or item.text() not in self._settings.presets:
+            self.preset_details.setText("Select a preset to see its details.")
+            self.preset_preview.show_state(FixtureState(beam_intensity=0.0, aura_intensity=0.0), False)
+            return
+        data = self._settings.presets[item.text()]
+        state = preset_state(data)
+        self.preset_preview.show_state(state, False, data.get("mode") == "extended")
+        self.preset_details.setText("\n".join(describe(data)))
 
     def _save_preset(self) -> None:
         name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
         name = name.strip()
         if not ok or not name:
             return
-        self._settings.presets[name] = self._fixture.state.to_dict()
-        self._refresh_presets()
+        self._settings.presets[name] = make_preset(self._fixture.state, self._fixture.mode)
+        self._refresh_presets(select=name)
         self._persist()
 
     def _load_preset(self) -> None:
         item = self.preset_list.currentItem()
         if item is None:
             return
-        state = FixtureState.from_dict(self._settings.presets[item.text()])
+        state = preset_state(self._settings.presets[item.text()])
         self._engine.replace_fixture(self._index, replace(self._fixture, state=state))
         self._load_controls()
 
@@ -1032,6 +1085,7 @@ class MainWindow(QMainWindow):
 
     def start_outputs(self) -> None:
         self._engine.start()
+        self._scenes.start()
         self._restart_osc()
 
     def _update_status(self) -> None:
@@ -1171,6 +1225,7 @@ class MainWindow(QMainWindow):
             master=self._engine.master,
             scenes=self._scenes.scenes,
             playlist=self._scenes.playlist,
+            fade_time=self._scenes.fade_time,
         )
 
     def _persist(self) -> None:
@@ -1230,6 +1285,10 @@ class MainWindow(QMainWindow):
         self._engine.set_fixtures(settings.fixtures)
         self._mapping_table.set(settings.mappings)
         self._scenes.set_content(settings.scenes, settings.playlist)
+        self._scenes.fade_time = settings.fade_time
+        self.fade_spin.blockSignals(True)
+        self.fade_spin.setValue(settings.fade_time)
+        self.fade_spin.blockSignals(False)
         self._index = 0
         self._refresh_fixture_list()
         self._load_controls()
@@ -1262,7 +1321,8 @@ class MainWindow(QMainWindow):
         for number, item in enumerate(self._scenes.playlist, start=1):
             name = self._scene_name(item.scene_id)
             hold = f"  hold {item.hold:g} s" if item.hold > 0 else ""
-            self.playlist_list.addItem(f"{number}. #{item.scene_id} {name}{hold}")
+            fade = f"  fade {item.fade:g} s" if item.fade > 0 else ""
+            self.playlist_list.addItem(f"{number}. #{item.scene_id} {name}{hold}{fade}")
         self._update_now_playing()
 
     def _scene_name(self, scene_id: int) -> str:
@@ -1274,6 +1334,10 @@ class MainWindow(QMainWindow):
         if row < 0:
             return None
         return int(self.scene_table.item(row, 0).text())
+
+    def _on_fade_changed(self, value: float) -> None:
+        self._scenes.fade_time = value
+        self._persist()
 
     def _store_scene(self) -> None:
         scene_id = self.scene_id_spin.value()
@@ -1327,14 +1391,23 @@ class MainWindow(QMainWindow):
         scene_id = self.playlist_scene_combo.currentData()
         if scene_id is None:
             return
-        items = self._playlist_items() + [PlaylistItem(scene_id, self.playlist_hold.value())]
+        items = self._playlist_items() + [
+            PlaylistItem(scene_id, self.playlist_hold.value(), self.playlist_fade.value())
+        ]
         self._commit_playlist(items, select=len(items) - 1)
 
-    def _playlist_update_hold(self) -> None:
+    def _load_playlist_row(self, row: int) -> None:
+        """Show the selected item's hold and fade in the editor, so they can be changed."""
+        items = self._playlist_items()
+        if 0 <= row < len(items):
+            self.playlist_hold.setValue(items[row].hold)
+            self.playlist_fade.setValue(items[row].fade)
+
+    def _playlist_update(self) -> None:
         row = self.playlist_list.currentRow()
         items = self._playlist_items()
         if 0 <= row < len(items):
-            items[row] = PlaylistItem(items[row].scene_id, self.playlist_hold.value())
+            items[row] = PlaylistItem(items[row].scene_id, self.playlist_hold.value(), self.playlist_fade.value())
             self._commit_playlist(items, select=row)
 
     def _playlist_remove(self) -> None:
@@ -1376,8 +1449,8 @@ class MainWindow(QMainWindow):
 
     def _update_scene_playback(self) -> None:
         self._scenes.tick()
-        if self._scenes.version != self._seen_scene_version:
-            # A scene was applied (by the UI, OSC, auto-advance or a mapping): refresh the controls.
+        if self._scenes.version != self._seen_scene_version or self._scenes.fading:
+            # A scene was applied, or a fade is moving: show the fixture's current settings.
             self._seen_scene_version = self._scenes.version
             self._load_controls()
             self._update_now_playing()
@@ -1397,6 +1470,7 @@ class MainWindow(QMainWindow):
         self._status_timer.stop()
         self._preview_timer.stop()
         self._scene_timer.stop()
+        self._scenes.stop()
         self._pulse_timer.stop()
         if self._osc is not None:
             self._osc.stop()

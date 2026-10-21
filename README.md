@@ -78,9 +78,13 @@ per group, and each one snaps to the nearest effect in its group.
 
 A **scene** is a saved look: every fixture's settings plus the master level. Each scene has a numeric ID
 (0 to 9999) and a name. Storing a scene with an existing ID replaces it. Blackout is not part of a scene.
-Recall is instant; there is no fade.
+Playlist items fade into their scene for their own fade time. Direct recalls (the Recall button and `/martin/scene`) use the **Fade (direct)** setting in the Scenes tab, which is 0 (instant) by default.
+A fade blends intensities, RGB colours, the aura pixels, and the flash timing. Effect numbers, colour presets,
+colour temperature, strobe mode and the special effect switch to their new value as the fade starts, since
+they cannot be blended. A fade overwrites manual changes until it finishes. A new recall during a fade starts
+from the look on screen.
 
-A **playlist** is an ordered list of scenes. Each item has a hold time in seconds. Use **Previous**,
+A **playlist** is an ordered list of scenes. Each item has a hold time in seconds and its own fade time in seconds (0 = cut). Edit either one by selecting the item and pressing Update. Use **Previous**,
 **Go** and **Next** to step through it. Playback wraps around at the end. Tick **Auto-advance** to move
 on automatically after each item's hold time. A hold of 0 waits for Next.
 
@@ -89,6 +93,7 @@ OSC control (send the scene ID as the value):
 | Address | Value | Action |
 |---|---|---|
 | `/martin/scene` | scene ID | Recall the scene with that ID (every message recalls it) |
+| `/martin/scene/fade` | seconds | Set the fade time for scene recalls (0 = instant) |
 | `/martin/playlist/next` | any | Next playlist item |
 | `/martin/playlist/prev` | any | Previous playlist item |
 | `/martin/playlist/go` | position (0 = first) | Play that playlist item |
