@@ -38,7 +38,7 @@ Network notes from the user guide:
 | Tab | What it does |
 |---|---|
 | Control | Beam and aura intensity, RGB, colour presets, colour temperature (CTC) |
-| Effects | Built-in effect (all FX numbers from the manual), speed, sync |
+| Effects | Built-in effects in five groups from the manual (beam intensity, beam colour, aura intensity, aura colour, combined), speed, sync |
 | Strobe and flash | Beam special effect, aura strobe/shutter (kind and speed), beam flash duration and rate |
 | Settings | Control/Settings functions (channel 15): reset, dimming curves, fan, scene capture, and more |
 | Pixels | Extended mode only: colour of the 72 aura pixels |
@@ -65,6 +65,13 @@ The **preview** panel above the tabs draws the selected fixture's beam and aura 
 blackout and effect name. It is a virtual fixture, so you can check the controls without hardware.
 It shows RGB colour only; built-in effects and colour presets appear as text, because the manual
 doesn't give their exact colours or timing.
+
+## Built-in effects
+
+The manual's FX table has five groups: beam intensity, beam colour, aura intensity, aura colour, and
+beam and aura combined. All five use the same DMX channel (16), so **only one effect runs at a time**.
+Choosing an effect in one group sets the other groups to None. The OSC mapping tab has one parameter
+per group, and each one snaps to the nearest effect in its group.
 
 ## DMX modes
 
