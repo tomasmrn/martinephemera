@@ -41,6 +41,15 @@ def swatch_hex(data: dict) -> str:
     return "#" + "".join(f"{round(c * level * 255):02x}" for c in beam_colour(state))
 
 
+def scene_swatch_hex(fixture_states: list[dict]) -> str:
+    """One colour for a scene: the average swatch of its fixtures. Grey when the scene has no fixtures."""
+    if not fixture_states:
+        return "#555555"
+    colours = [[int(swatch_hex(state)[i:i + 2], 16) for i in (1, 3, 5)] for state in fixture_states]
+    average = [round(sum(c[channel] for c in colours) / len(colours)) for channel in range(3)]
+    return "#" + "".join(f"{value:02x}" for value in average)
+
+
 def describe(data: dict) -> list[str]:
     """Short, human-readable lines for the details panel."""
     state = preset_state(data)

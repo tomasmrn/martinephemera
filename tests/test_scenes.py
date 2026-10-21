@@ -182,3 +182,13 @@ class RenameSceneTests(unittest.TestCase):
 
     def test_rename_unknown_scene_returns_false(self):
         self.assertFalse(SceneManager(make_engine()).rename(42, "x"))
+
+
+class SceneSwatchTests(unittest.TestCase):
+    def test_scene_swatch_averages_fixtures_and_handles_empty(self):
+        from martin_controller.presets import scene_swatch_hex
+        red = FixtureState(beam_rgb=(1, 0, 0)).to_dict()
+        blue = FixtureState(beam_rgb=(0, 0, 1)).to_dict()
+        self.assertEqual(scene_swatch_hex([red]), "#ff0000")
+        self.assertEqual(scene_swatch_hex([red, blue]), "#800080")
+        self.assertEqual(scene_swatch_hex([]), "#555555")

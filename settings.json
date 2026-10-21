@@ -25,21 +25,21 @@
           0.0
         ],
         "beam_ctc_kelvin": null,
-        "beam_color_preset": 37,
+        "beam_color_preset": 2,
         "beam_p3_mix": 0,
         "control": 0,
         "fx": 0,
         "fx_speed": 128,
         "fx_sync": 36,
         "aura_strobe": 30,
-        "aura_intensity": 1.0,
+        "aura_intensity": 0.9998574256896973,
         "aura_rgb": [
           0.0,
           0.0,
           0.0
         ],
         "aura_ctc_kelvin": null,
-        "aura_color_preset": 31,
+        "aura_color_preset": 2,
         "aura_p3_mix": 0,
         "aura_pixels": [
           [
@@ -2451,7 +2451,7 @@
     {
       "scene_id": 2,
       "hold": 0.0,
-      "fade": 0.0
+      "fade": 5.0
     }
   ],
   "fade_time": 0.0

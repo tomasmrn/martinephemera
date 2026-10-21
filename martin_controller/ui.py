@@ -49,7 +49,7 @@ from .fixture import Fixture, FixtureState
 from .mapping import PARAMETERS, Mapping, MappingTable
 from .preview import FixturePreview
 from .osc_server import OscServer
-from .presets import describe, make_preset, preset_state, swatch_hex
+from .presets import describe, make_preset, preset_state, scene_swatch_hex, swatch_hex
 from .scenes import MAX_SCENE_ID, PlaylistItem, SceneManager
 from .preview import FixturePreview, speed_text
 
@@ -528,6 +528,7 @@ class MainWindow(QMainWindow):
         vbox = QVBoxLayout(library)
         self.scene_table = QTableWidget(0, 4)
         self.scene_table.setHorizontalHeaderLabels(["ID", "Name", "Fixtures", "Master"])
+        self.scene_table.setIconSize(QPixmap(14, 14).size())
         self.scene_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.scene_table.setSelectionMode(QTableWidget.SingleSelection)
         self.scene_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -971,9 +972,15 @@ class MainWindow(QMainWindow):
             self._show_preset(None)
 
     def _swatch_icon(self, data: dict) -> QIcon:
+        return self._hex_icon(swatch_hex(data))
+
+    def _hex_icon(self, hex_colour: str) -> QIcon:
         pixmap = QPixmap(14, 14)
-        pixmap.fill(QColor(swatch_hex(data)))
+        pixmap.fill(QColor(hex_colour))
         return QIcon(pixmap)
+
+    def _scene_icon(self, scene) -> QIcon:
+        return self._hex_icon(scene_swatch_hex(scene.fixtures))
 
     def _show_preset(self, item) -> None:
         if item is None or item.text() not in self._settings.presets:
@@ -1319,18 +1326,26 @@ class MainWindow(QMainWindow):
             self.scene_table.insertRow(row)
             cells = [str(scene.id), scene.name, str(len(scene.fixtures)), f"{round(scene.master * 100)} %"]
             for column, text in enumerate(cells):
-                self.scene_table.setItem(row, column, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if column == 0:
+                    item.setIcon(self._scene_icon(scene))
+                self.scene_table.setItem(row, column, item)
 
         self.playlist_scene_combo.clear()
         for scene in scenes:
             self.playlist_scene_combo.addItem(f"{scene.id}  {scene.name}".rstrip(), scene.id)
 
         self.playlist_list.clear()
+        self.playlist_list.setIconSize(QPixmap(14, 14).size())
         for number, item in enumerate(self._scenes.playlist, start=1):
             name = self._scene_name(item.scene_id)
             hold = f"  hold {item.hold:g} s" if item.hold > 0 else ""
             fade = f"  fade {item.fade:g} s" if item.fade > 0 else ""
-            self.playlist_list.addItem(f"{number}. #{item.scene_id} {name}{hold}{fade}")
+            entry = QListWidgetItem(f"{number}. #{item.scene_id} {name}{hold}{fade}")
+            scene = self._scenes.get(item.scene_id)
+            if scene is not None:
+                entry.setIcon(self._scene_icon(scene))
+            self.playlist_list.addItem(entry)
         self._update_now_playing()
 
     def _scene_name(self, scene_id: int) -> str:
