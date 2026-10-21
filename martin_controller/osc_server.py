@@ -4,11 +4,12 @@ Built-in addresses (n = fixture number, 1-based, in the order shown in the Fixtu
 
   /martin/blackout              i  0 or 1
   /martin/master                f  master dimmer, 0.0-1.0
-  /martin/scene                 i  recall the scene with this ID (every message recalls it)
+  /martin/scene                 i  recall the scene with this ID when the ID changes (a steady stream does nothing)
+  /martin/scene/recall          i  recall the scene with this ID every time (use for buttons)
   /martin/scene/fade            f  fade time in seconds for scene recalls (0 = instant)
-  /martin/playlist/next         -  next playlist item
-  /martin/playlist/prev         -  previous playlist item
-  /martin/playlist/go           i  play playlist item at this position (0 = first)
+  /martin/playlist/next         f  next playlist item when the value rises to 0.5 or more (a button press)
+  /martin/playlist/prev         f  previous playlist item when the value rises to 0.5 or more
+  /martin/playlist/go           i  play playlist item at this position, when the value changes
   /martin/<n>/intensity         f  beam intensity, 0.0-1.0
   /martin/<n>/beam/rgb          fff  0.0-1.0 each
   /martin/<n>/beam/preset       i  0 (none) or 1-48
@@ -63,6 +64,14 @@ def _first_number(args) -> float | None:
     return None
 
 
+MOVE_EPSILON = 1e-4   # values closer than this count as the same (filters out sender jitter)
+
+
+def _numbers(args) -> tuple:
+    """All numeric arguments of a message, as floats. Used to decide whether a value has moved."""
+    return tuple(float(arg) for arg in args if isinstance(arg, (int, float)))
+
+
 class OscServer:
     def __init__(self, engine: DmxEngine, port: int, host: str = "0.0.0.0",
                  mappings: MappingTable | None = None, scenes: SceneManager | None = None):
@@ -70,6 +79,8 @@ class OscServer:
         self._mappings = mappings if mappings is not None else MappingTable()
         self._scenes = scenes
         self._last_scene_id: dict[str, int] = {}   # last ID recalled, per mapping address
+        self._last_seen: dict[str, tuple] = {}     # last values, per address (for change detection)
+        self._seen_lock = threading.Lock()
         self.monitor = OscMonitor()
         dispatcher = Dispatcher()
         dispatcher.set_default_handler(self._handle)
@@ -90,7 +101,7 @@ class OscServer:
         if address.startswith("/martin/"):
             self._handle_builtin(address, args)
             return
-        if value is None:
+        if value is None or not self._moved(address, _numbers(args)):
             return
         for mapping in self._mappings.lookup(address):
             self._apply_mapping(mapping, value)
@@ -117,28 +128,61 @@ class OscServer:
         for index in indices:
             self._engine.modify_fixture(index, lambda state, p=param, v=scaled: p.changes_for(state, v))
 
+    def _moved(self, address: str, values: tuple) -> bool:
+        """True when any value differs from the last message at this address (or it is the first one).
+        A sender that repeats the same value every frame therefore does not keep overwriting a scene."""
+        with self._seen_lock:
+            previous = self._last_seen.get(address)
+            self._last_seen[address] = values
+        return (previous is None or len(previous) != len(values)
+                or any(abs(a - b) > MOVE_EPSILON for a, b in zip(previous, values)))
+
+    def _changed(self, address: str, value: float) -> bool:
+        """True when the value differs from the last one seen at this address (exact match)."""
+        with self._seen_lock:
+            changed = self._last_seen.get(address) != (value,)
+            self._last_seen[address] = (value,)
+        return changed
+
+    def _rising(self, address: str, value: float) -> bool:
+        """True when the value has just risen to 0.5 or more (a button press, not a held stream)."""
+        with self._seen_lock:
+            previous = self._last_seen.get(address, (0.0,))[0]
+            self._last_seen[address] = (value,)
+        return value >= 0.5 and previous < 0.5
+
     def _handle_builtin(self, address: str, args) -> None:
         parts = address.strip("/").split("/")
         if parts[1:] == ["blackout"] and args:
-            self._engine.blackout = bool(args[0])
+            if self._moved(address, _numbers(args)):
+                self._engine.blackout = bool(args[0])
             return
         if parts[1:] == ["master"] and args:
-            self._engine.master = float(args[0])
+            if self._moved(address, _numbers(args)):
+                self._engine.master = float(args[0])
             return
         if self._scenes is not None and parts[1:] == ["scene"] and args:
+            # Recall only when the ID changes: a TouchDesigner stream repeats the same ID every frame.
+            if self._changed(address, int(args[0])):
+                self._scenes.recall(int(args[0]))
+            return
+        if self._scenes is not None and parts[1:] == ["scene", "recall"] and args:
             self._scenes.recall(int(args[0]))
             return
         if self._scenes is not None and parts[1:] == ["scene", "fade"] and args:
             self._scenes.fade_time = max(0.0, float(args[0]))
             return
-        if self._scenes is not None and parts[1:] == ["playlist", "next"]:
-            self._scenes.step(1)
+        if self._scenes is not None and parts[1:] == ["playlist", "next"] and args:
+            if self._rising(address, float(args[0])):
+                self._scenes.step(1)
             return
-        if self._scenes is not None and parts[1:] == ["playlist", "prev"]:
-            self._scenes.step(-1)
+        if self._scenes is not None and parts[1:] == ["playlist", "prev"] and args:
+            if self._rising(address, float(args[0])):
+                self._scenes.step(-1)
             return
         if self._scenes is not None and parts[1:] == ["playlist", "go"] and args:
-            self._scenes.go(int(args[0]))
+            if self._changed(address, int(args[0])):
+                self._scenes.go(int(args[0]))
             return
 
         if len(parts) < 3 or not parts[1].isdigit():
@@ -149,6 +193,8 @@ class OscServer:
         param = "/".join(parts[2:])
         values = _OSC_PARAMS.get(param)
         if values is None or len(args) < values[0]:
+            return
+        if not self._moved(address, _numbers(args)):
             return
         self._engine.update_fixture(index, **values[1](*args))
 

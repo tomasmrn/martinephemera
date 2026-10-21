@@ -2,6 +2,7 @@
 
 import threading
 import time
+from dataclasses import replace
 
 from .artnet import ARTNET_PORT, ArtNetSender
 from .config import NetworkSettings
@@ -28,6 +29,9 @@ class DmxEngine:
         self._network = network
         self._blackout = False
         self._master = max(0.0, min(1.0, master))
+        # Parameters changed by hand (OSC, mappings, the UI) since the last scene. They win over a fade.
+        self._overrides: dict[int, set[str]] = {}
+        self._master_overridden = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error: str | None = None
@@ -46,11 +50,13 @@ class DmxEngine:
     def set_fixtures(self, fixtures: list[Fixture]) -> None:
         with self._lock:
             self._fixtures = list(fixtures)
+            self._overrides.clear()
 
     def update_fixture(self, index: int, **state_changes) -> None:
         """Change one or more FixtureState fields on fixture `index`."""
         with self._lock:
             self._fixtures[index] = with_state(self._fixtures[index], **state_changes)
+            self._mark(index, state_changes)
 
     def modify_fixture(self, index: int, make_changes) -> None:
         """Read-modify-write one fixture under the lock. `make_changes(state)` returns the field changes."""
@@ -58,11 +64,53 @@ class DmxEngine:
             if not 0 <= index < len(self._fixtures):
                 return
             fixture = self._fixtures[index]
-            self._fixtures[index] = with_state(fixture, **make_changes(fixture.state))
+            changes = make_changes(fixture.state)
+            self._fixtures[index] = with_state(fixture, **changes)
+            self._mark(index, changes)
 
     def replace_fixture(self, index: int, fixture: Fixture) -> None:
+        """Load a whole state (a scene or a preset). Clears any manual overrides on that fixture."""
         with self._lock:
             self._fixtures[index] = fixture
+            self._overrides.pop(index, None)
+
+    def fade_fixture(self, index: int, make_state) -> None:
+        """Write a state produced during a fade. `make_state(current_state, overridden_fields)` returns the
+        new FixtureState. Manual overrides are kept, so this does not clear them."""
+        with self._lock:
+            if not 0 <= index < len(self._fixtures):
+                return
+            fixture = self._fixtures[index]
+            overridden = frozenset(self._overrides.get(index, ()))
+            self._fixtures[index] = replace(fixture, state=make_state(fixture.state, overridden))
+
+    def clear_overrides(self) -> None:
+        """Forget all manual changes. Called when a scene starts, because the scene now sets everything."""
+        with self._lock:
+            self._overrides.clear()
+        self._master_overridden = False
+
+    def overrides(self, index: int) -> frozenset[str]:
+        """Fields of fixture `index` changed by hand since the last scene or preset load."""
+        with self._lock:
+            return frozenset(self._overrides.get(index, ()))
+
+    @property
+    def master_overridden(self) -> bool:
+        return self._master_overridden
+
+    def set_master_from_scene(self, value: float, keep_override: bool = False) -> None:
+        """Set the master level from a scene. Unless `keep_override` is set (a fade in progress),
+        this also clears a manual master change, because the scene now sets the master."""
+        if keep_override and self._master_overridden:
+            return
+        if not keep_override:
+            self._master_overridden = False
+        self._master = max(0.0, min(1.0, float(value)))
+
+    def _mark(self, index: int, changes) -> None:
+        """Record which fields were changed by hand. Call with the lock held."""
+        self._overrides.setdefault(index, set()).update(changes.keys())
 
     @property
     def master(self) -> float:
@@ -72,6 +120,7 @@ class DmxEngine:
     def master(self, value: float) -> None:
         """Master dimmer, 0.0-1.0. Scales every fixture's beam and aura intensity."""
         self._master = max(0.0, min(1.0, float(value)))
+        self._master_overridden = True
 
     @property
     def blackout(self) -> bool:

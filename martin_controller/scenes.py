@@ -60,6 +60,16 @@ def _mix(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
 
+def _fade_state_maker(start: FixtureState, target: FixtureState, t: float):
+    """Returns the function the engine calls for each fade step. Fields the user changed by hand
+    keep their current value, so the fade does not undo them."""
+    def make(current: FixtureState, overridden: frozenset) -> FixtureState:
+        state = interpolate_state(start, target, t)
+        kept = {name: getattr(current, name) for name in overridden}
+        return replace(state, **kept) if kept else state
+    return make
+
+
 def interpolate_state(start: FixtureState, end: FixtureState, t: float) -> FixtureState:
     """Blend the continuous settings from `start` towards `end` by t (0.0 to 1.0).
     Discrete settings take the `end` value straight away."""
@@ -191,8 +201,10 @@ class SceneManager:
             count = len(self._playlist)
         if count == 0:
             return False
-        current = -1 if self.position is None else self.position
-        return self.go((current + delta) % count)
+        if self.position is None:
+            # Nothing playing yet: Next starts at the first item, Previous at the last.
+            return self.go(0 if delta > 0 else count - 1)
+        return self.go((self.position + delta) % count)
 
     def tick(self, now: float | None = None) -> None:
         """Call regularly. When auto-advance is on, moves on once the current item's hold time has passed."""
@@ -210,6 +222,7 @@ class SceneManager:
     def _apply(self, scene: Scene, fade_time: float | None = None) -> None:
         """Apply a scene. `fade_time` defaults to the manager's fade time (used by direct recalls)."""
         self.version += 1
+        self._engine.clear_overrides()   # the scene sets every parameter, so earlier manual changes stop mattering
         duration = self.fade_time if fade_time is None else fade_time
         fixtures = self._engine.fixtures
         if duration <= 0 or not fixtures:
@@ -218,7 +231,7 @@ class SceneManager:
                 self._engine.replace_fixture(
                     index, replace(fixtures[index], state=FixtureState.from_dict(state))
                 )
-            self._engine.master = scene.master
+            self._engine.set_master_from_scene(scene.master)
             return
 
         # Start a fade from whatever is showing now (even if another fade was running).
@@ -256,9 +269,10 @@ class SceneManager:
         for index, (start, target) in enumerate(zip(fade["starts"], fade["targets"])):
             if target is None or index >= len(fixtures):
                 continue
-            state = interpolate_state(start, target, t)
-            self._engine.replace_fixture(index, replace(fixtures[index], state=state))
-        self._engine.master = _mix(fade["master_start"], fade["master_end"], max(0.0, min(1.0, t)))
+            self._engine.fade_fixture(index, _fade_state_maker(start, target, t))
+        self._engine.set_master_from_scene(
+            _mix(fade["master_start"], fade["master_end"], max(0.0, min(1.0, t))), keep_override=True
+        )
         if t >= 1.0:
             with self._fade_lock:
                 if self._fade is fade:

@@ -92,14 +92,20 @@ OSC control (send the scene ID as the value):
 
 | Address | Value | Action |
 |---|---|---|
-| `/martin/scene` | scene ID | Recall the scene with that ID (every message recalls it) |
+| `/martin/scene` | scene ID | Recall the scene when the ID changes. A steady stream of the same ID does nothing |
+| `/martin/scene/recall` | scene ID | Recall the scene every time (for buttons) |
 | `/martin/scene/fade` | seconds | Set the fade time for scene recalls (0 = instant) |
-| `/martin/playlist/next` | any | Next playlist item |
-| `/martin/playlist/prev` | any | Previous playlist item |
-| `/martin/playlist/go` | position (0 = first) | Play that playlist item |
+| `/martin/playlist/next` | 1 (button press) | Next playlist item. Fires when the value rises to 0.5 or more |
+| `/martin/playlist/prev` | 1 (button press) | Previous playlist item. Fires when the value rises to 0.5 or more |
+| `/martin/playlist/go` | position (0 = first) | Play that playlist item when the value changes |
 
 From TouchDesigner, the mapping parameter **Recall scene by ID** recalls the scene only when the rounded
 ID changes, so a steady control does not keep re-applying the scene.
+
+**Manual changes after a scene.** A scene sets every parameter when it starts. OSC parameter values only count when they change, so a sender that keeps repeating the same value (for example a fader that is not being moved) does not overwrite the scene. Anything you then change
+by hand (the UI, OSC, or a mapping) becomes an override and stays until the next scene starts. During a fade,
+overridden parameters keep the value you set, and the rest of the scene still fades in. The Scenes tab lists
+what has been changed by hand. Recalling a scene again resets everything to the scene.
 
 Scenes and the playlist are saved in the settings file and in project files.
 

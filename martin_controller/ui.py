@@ -622,12 +622,17 @@ class MainWindow(QMainWindow):
         self.now_playing_label = QLabel("Nothing playing.")
         self.now_playing_label.setWordWrap(True)
         vbox.addWidget(self.now_playing_label)
+        self.override_label = QLabel("")
+        self.override_label.setWordWrap(True)
+        vbox.addWidget(self.override_label)
         columns.addWidget(playlist_box, 1)
 
         layout.addLayout(columns, 1)
         note = QLabel(
-            "OSC: /martin/scene <id> recalls a scene (send the ID as the value). "
-            "/martin/playlist/next, /martin/playlist/prev and /martin/playlist/go <position> step through the playlist. "
+            "OSC: /martin/scene <id> recalls a scene when the ID changes, so a steady stream does nothing. "
+            "/martin/scene/recall <id> recalls it every time (for buttons). "
+            "/martin/playlist/next and /martin/playlist/prev step on a button press (value rising to 1). "
+            "/martin/playlist/go <position> plays an item when the value changes. "
             "A scene stores every fixture's settings and the master level, not blackout. "
             "Recall is instant (no fade)."
         )
@@ -1280,7 +1285,7 @@ class MainWindow(QMainWindow):
         """Replace the whole working state with `settings` and refresh every tab."""
         self._settings = settings
         self._engine.blackout = False
-        self._engine.master = settings.master
+        self._engine.set_master_from_scene(settings.master)
         self._engine.reconfigure(settings.network)
         self._engine.set_fixtures(settings.fixtures)
         self._mapping_table.set(settings.mappings)
@@ -1447,7 +1452,18 @@ class MainWindow(QMainWindow):
             f"Now playing: {position + 1} of {len(items)}, scene #{item.scene_id} {self._scene_name(item.scene_id)}"
         )
 
+    def _update_overrides(self) -> None:
+        names = sorted(self._engine.overrides(self._index))
+        if self._engine.master_overridden:
+            names.append("master dimmer")
+        if names:
+            shown = ", ".join(n.replace("_", " ") for n in names)
+            self.override_label.setText(f"Changed by hand since the last scene: {shown}. Recall a scene to reset.")
+        else:
+            self.override_label.setText("")
+
     def _update_scene_playback(self) -> None:
+        self._update_overrides()
         self._scenes.tick()
         if self._scenes.version != self._seen_scene_version or self._scenes.fading:
             # A scene was applied, or a fade is moving: show the fixture's current settings.
