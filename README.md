@@ -150,7 +150,7 @@ The app then maps each OSC address to a light parameter.
 **3. Create the mapping in this app**
 - OSC mapping tab: press **Learn address**, then move the control in TouchDesigner. Its address fills in.
 - Choose the fixture (or all fixtures) and the parameter, set the input range (for example 0 to 1) and the output range (for example 0 to 255 for effect numbers), then **Add mapping**.
-- The monitor line at the top shows what is arriving, which helps when a value does not seem to work.
+- The monitor line at the top shows the last value that changed (not just the last message received, since a stream sends every channel every frame), which helps when a value does not seem to work.
 
 **Testing without TouchDesigner**
 ```bash

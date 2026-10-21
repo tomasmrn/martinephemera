@@ -34,7 +34,11 @@ from .scenes import SceneManager
 
 
 class OscMonitor:
-    """Last incoming message, for the UI. Written by the OSC thread, read by the UI timer."""
+    """What the UI shows about incoming OSC. Written by the OSC thread, read by the UI timer.
+
+    `count`/`address`/`value` describe the last message received. A sender that streams every channel
+    each frame makes that the same channel every time, so `change_*` describes the last value that actually
+    moved, which is usually the one the user is looking for."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -42,6 +46,9 @@ class OscMonitor:
         self.address: str | None = None
         self.value: float | None = None
         self.time: float | None = None
+        self.change_count = 0
+        self.change_address: str | None = None
+        self.change_value: float | None = None
 
     def record(self, address: str, value: float | None) -> None:
         with self._lock:
@@ -50,9 +57,19 @@ class OscMonitor:
             self.value = value
             self.time = time.time()
 
+    def record_change(self, address: str, value: float | None) -> None:
+        with self._lock:
+            self.change_count += 1
+            self.change_address = address
+            self.change_value = value
+
     def snapshot(self) -> tuple[int, str | None, float | None]:
         with self._lock:
             return self.count, self.address, self.value
+
+    def change_snapshot(self) -> tuple[int, str | None, float | None]:
+        with self._lock:
+            return self.change_count, self.change_address, self.change_value
 
 
 def _first_number(args) -> float | None:
@@ -134,14 +151,19 @@ class OscServer:
         with self._seen_lock:
             previous = self._last_seen.get(address)
             self._last_seen[address] = values
-        return (previous is None or len(previous) != len(values)
-                or any(abs(a - b) > MOVE_EPSILON for a, b in zip(previous, values)))
+        moved = (previous is None or len(previous) != len(values)
+                 or any(abs(a - b) > MOVE_EPSILON for a, b in zip(previous, values)))
+        if moved:
+            self.monitor.record_change(address, values[0] if values else None)
+        return moved
 
     def _changed(self, address: str, value: float) -> bool:
         """True when the value differs from the last one seen at this address (exact match)."""
         with self._seen_lock:
             changed = self._last_seen.get(address) != (value,)
             self._last_seen[address] = (value,)
+        if changed:
+            self.monitor.record_change(address, float(value))
         return changed
 
     def _rising(self, address: str, value: float) -> bool:
@@ -149,7 +171,10 @@ class OscServer:
         with self._seen_lock:
             previous = self._last_seen.get(address, (0.0,))[0]
             self._last_seen[address] = (value,)
-        return value >= 0.5 and previous < 0.5
+        rising = value >= 0.5 and previous < 0.5
+        if rising:
+            self.monitor.record_change(address, value)
+        return rising
 
     def _handle_builtin(self, address: str, args) -> None:
         parts = address.strip("/").split("/")

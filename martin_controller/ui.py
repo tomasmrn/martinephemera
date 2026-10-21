@@ -1114,13 +1114,16 @@ class MainWindow(QMainWindow):
         if self._osc is None:
             return
         count, address, value = self._osc.monitor.snapshot()
-        if address is None:
-            self.monitor_label.setText("No OSC messages yet.")
+        changes, change_address, change_value = self._osc.monitor.change_snapshot()
+        if change_address is None:
+            self.monitor_label.setText("No OSC changes yet.")
         else:
-            shown = "" if value is None else f" = {value:.3f}"
-            self.monitor_label.setText(f"Last OSC: {address}{shown}   ({count} received)")
-        if self.learn_button.isChecked() and count > self._learn_start_count and address:
-            self.map_address.setText(address)
+            shown = "" if change_value is None else f" = {change_value:.3f}"
+            self.monitor_label.setText(
+                f"Last changed: {change_address}{shown}   ({count} messages received)"
+            )
+        if self.learn_button.isChecked() and changes > self._learn_start_count and change_address:
+            self.map_address.setText(change_address)
             self.learn_button.setChecked(False)
 
     def _on_learn_toggled(self, on: bool) -> None:
@@ -1130,7 +1133,7 @@ class MainWindow(QMainWindow):
             self.learn_button.setChecked(False)
             self.statusBar().showMessage("Enable the OSC listener in the Network tab first.", 5000)
             return
-        self._learn_start_count = self._osc.monitor.snapshot()[0]
+        self._learn_start_count = self._osc.monitor.change_snapshot()[0]
         self.statusBar().showMessage("Learning: move a control in TouchDesigner or TouchOSC", 5000)
 
     # --- OSC mappings ----------------------------------------------------------

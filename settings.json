@@ -25,21 +25,21 @@
           0.0
         ],
         "beam_ctc_kelvin": null,
-        "beam_color_preset": 30,
+        "beam_color_preset": 37,
         "beam_p3_mix": 0,
         "control": 0,
         "fx": 0,
         "fx_speed": 128,
         "fx_sync": 36,
         "aura_strobe": 30,
-        "aura_intensity": 0.9998574256896973,
+        "aura_intensity": 1.0,
         "aura_rgb": [
           0.0,
           0.0,
           0.0
         ],
         "aura_ctc_kelvin": null,
-        "aura_color_preset": 38,
+        "aura_color_preset": 31,
         "aura_p3_mix": 0,
         "aura_pixels": [
           [

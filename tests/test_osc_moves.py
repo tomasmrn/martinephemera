@@ -72,3 +72,33 @@ class SteadyStreamTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LastChangedMonitorTests(unittest.TestCase):
+    PORT = 18172
+
+    def setUp(self):
+        self.engine = DmxEngine(NetworkSettings(), [Fixture()])
+        table = MappingTable([
+            Mapping("/td/a", "beam_intensity", fixture=0, in_min=0, in_max=1, out_min=0, out_max=1),
+            Mapping("/td/b", "aura_intensity", fixture=0, in_min=0, in_max=1, out_min=0, out_max=1),
+        ])
+        self.server = OscServer(self.engine, self.PORT, host="127.0.0.1", mappings=table)
+        self.server.start()
+        self.client = SimpleUDPClient("127.0.0.1", self.PORT)
+
+    def tearDown(self):
+        self.server.stop()
+
+    def test_last_changed_is_the_moving_channel_not_the_last_in_the_stream(self):
+        self.client.send_message("/td/a", 0.2)
+        self.client.send_message("/td/b", 0.5)
+        time.sleep(0.1)
+        self.client.send_message("/td/a", 0.7)                 # channel a moves
+        for _ in range(20):                                    # channel b keeps streaming its steady value
+            self.client.send_message("/td/b", 0.5)
+            self.client.send_message("/td/a", 0.7)
+        time.sleep(0.15)
+        _, address, value = self.server.monitor.change_snapshot()
+        self.assertEqual(address, "/td/a")
+        self.assertAlmostEqual(value, 0.7, places=3)
