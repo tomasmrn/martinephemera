@@ -4,6 +4,10 @@ Built-in addresses (n = fixture number, 1-based, in the order shown in the Fixtu
 
   /martin/blackout              i  0 or 1
   /martin/master                f  master dimmer, 0.0-1.0
+  /martin/scene                 i  recall the scene with this ID (every message recalls it)
+  /martin/playlist/next         -  next playlist item
+  /martin/playlist/prev         -  previous playlist item
+  /martin/playlist/go           i  play playlist item at this position (0 = first)
   /martin/<n>/intensity         f  beam intensity, 0.0-1.0
   /martin/<n>/beam/rgb          fff  0.0-1.0 each
   /martin/<n>/beam/preset       i  0 (none) or 1-48
@@ -24,6 +28,7 @@ from pythonosc.osc_server import ThreadingOSCUDPServer
 from .engine import DmxEngine
 from .fixture import unit_to_u8
 from .mapping import PARAMETERS, MappingTable
+from .scenes import SceneManager
 
 
 class OscMonitor:
@@ -59,9 +64,11 @@ def _first_number(args) -> float | None:
 
 class OscServer:
     def __init__(self, engine: DmxEngine, port: int, host: str = "0.0.0.0",
-                 mappings: MappingTable | None = None):
+                 mappings: MappingTable | None = None, scenes: SceneManager | None = None):
         self._engine = engine
         self._mappings = mappings if mappings is not None else MappingTable()
+        self._scenes = scenes
+        self._last_scene_id: dict[str, int] = {}   # last ID recalled, per mapping address
         self.monitor = OscMonitor()
         dispatcher = Dispatcher()
         dispatcher.set_default_handler(self._handle)
@@ -98,6 +105,13 @@ class OscServer:
         if param.key == "master":
             self._engine.master = scaled
             return
+        if param.key == "scene":
+            # Recall only when the ID changes, so a steady control does not keep re-applying the scene.
+            scene_id = int(round(scaled))
+            if self._scenes is not None and self._last_scene_id.get(mapping.address) != scene_id:
+                self._last_scene_id[mapping.address] = scene_id
+                self._scenes.recall(scene_id)
+            return
         indices = range(len(self._engine.fixtures)) if mapping.fixture is None else [mapping.fixture]
         for index in indices:
             self._engine.modify_fixture(index, lambda state, p=param, v=scaled: p.changes_for(state, v))
@@ -109,6 +123,18 @@ class OscServer:
             return
         if parts[1:] == ["master"] and args:
             self._engine.master = float(args[0])
+            return
+        if self._scenes is not None and parts[1:] == ["scene"] and args:
+            self._scenes.recall(int(args[0]))
+            return
+        if self._scenes is not None and parts[1:] == ["playlist", "next"]:
+            self._scenes.step(1)
+            return
+        if self._scenes is not None and parts[1:] == ["playlist", "prev"]:
+            self._scenes.step(-1)
+            return
+        if self._scenes is not None and parts[1:] == ["playlist", "go"] and args:
+            self._scenes.go(int(args[0]))
             return
 
         if len(parts) < 3 or not parts[1].isdigit():

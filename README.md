@@ -43,6 +43,7 @@ Network notes from the user guide:
 | Settings | Control/Settings functions (channel 15): reset, dimming curves, fan, scene capture, and more |
 | Pixels | Extended mode only: colour of the 72 aura pixels |
 | OSC mapping | Map incoming OSC addresses (from TouchDesigner or any OSC sender) to light parameters |
+| Scenes | Store the look as a numbered scene, build a playlist of scenes, and play it back (manually or auto-advance) |
 | Presets | Save and recall the full state of a fixture |
 | Fixtures | Name, universe, start address and DMX mode (Basic or Extended) for each fixture |
 | Network | Protocol (Art-Net or sACN), target and port, refresh rate, OSC listener |
@@ -72,6 +73,30 @@ The manual's FX table has five groups: beam intensity, beam colour, aura intensi
 beam and aura combined. All five use the same DMX channel (16), so **only one effect runs at a time**.
 Choosing an effect in one group sets the other groups to None. The OSC mapping tab has one parameter
 per group, and each one snaps to the nearest effect in its group.
+
+## Scenes and playlists
+
+A **scene** is a saved look: every fixture's settings plus the master level. Each scene has a numeric ID
+(0 to 9999) and a name. Storing a scene with an existing ID replaces it. Blackout is not part of a scene.
+Recall is instant; there is no fade.
+
+A **playlist** is an ordered list of scenes. Each item has a hold time in seconds. Use **Previous**,
+**Go** and **Next** to step through it. Playback wraps around at the end. Tick **Auto-advance** to move
+on automatically after each item's hold time. A hold of 0 waits for Next.
+
+OSC control (send the scene ID as the value):
+
+| Address | Value | Action |
+|---|---|---|
+| `/martin/scene` | scene ID | Recall the scene with that ID (every message recalls it) |
+| `/martin/playlist/next` | any | Next playlist item |
+| `/martin/playlist/prev` | any | Previous playlist item |
+| `/martin/playlist/go` | position (0 = first) | Play that playlist item |
+
+From TouchDesigner, the mapping parameter **Recall scene by ID** recalls the scene only when the rounded
+ID changes, so a steady control does not keep re-applying the scene.
+
+Scenes and the playlist are saved in the settings file and in project files.
 
 ## DMX modes
 
@@ -151,6 +176,7 @@ martin_controller/
   config.py      settings.json, and project file load and save
   mapping.py     OSC address to parameter mapping (parameter table, ranges, lookup)
   osc_server.py  OSC listener: built-in /martin addresses, mappings, and the input monitor
+  scenes.py      Scenes, playlist, and playback (recall, next/prev, auto-advance)
   preview.py     Virtual fixture preview widget
   ui.py          PySide6 window
   __main__.py    Entry point

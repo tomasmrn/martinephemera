@@ -7,6 +7,7 @@ from pathlib import Path
 from .artnet import ARTNET_PORT
 from .fixture import Fixture
 from .mapping import Mapping
+from .scenes import PlaylistItem, Scene
 
 SETTINGS_PATH = Path(__file__).resolve().parent.parent / "settings.json"
 
@@ -29,6 +30,8 @@ class Settings:
     presets: dict[str, dict] = field(default_factory=dict)  # name -> FixtureState dict
     mappings: list[Mapping] = field(default_factory=list)   # OSC address -> parameter
     master: float = 1.0                                       # master dimmer, 0.0-1.0
+    scenes: list[Scene] = field(default_factory=list)         # saved looks, by ID
+    playlist: list[PlaylistItem] = field(default_factory=list)  # playback order
 
     def to_dict(self) -> dict:
         return {
@@ -37,6 +40,8 @@ class Settings:
             "presets": self.presets,
             "mappings": [m.to_dict() for m in self.mappings],
             "master": self.master,
+            "scenes": [s.to_dict() for s in self.scenes],
+            "playlist": [item.to_dict() for item in self.playlist],
         }
 
     @classmethod
@@ -44,8 +49,10 @@ class Settings:
         network = NetworkSettings(**data.get("network", {}))
         fixtures = [Fixture.from_dict(f) for f in data.get("fixtures", [])] or [Fixture()]
         mappings = [Mapping.from_dict(m) for m in data.get("mappings", [])]
+        scenes = [Scene.from_dict(s) for s in data.get("scenes", [])]
+        playlist = [PlaylistItem.from_dict(item) for item in data.get("playlist", [])]
         return cls(network=network, fixtures=fixtures, presets=data.get("presets", {}), mappings=mappings,
-                   master=float(data.get("master", 1.0)))
+                   master=float(data.get("master", 1.0)), scenes=scenes, playlist=playlist)
 
 
 def load_settings(path: Path = SETTINGS_PATH) -> Settings:

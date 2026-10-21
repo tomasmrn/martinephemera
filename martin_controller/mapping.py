@@ -73,6 +73,7 @@ PARAMETERS: dict[str, Parameter] = {p.key: p for p in [
     _int("beam_special_effect", "Beam special effect (0-255)", "beam_special_effect", 255),
     _int("aura_strobe", "Aura strobe / shutter (0-255)", "aura_strobe", 255),
     Parameter("master", "Master dimmer (0-1)", "float", 0.0, 1.0),
+    Parameter("scene", "Recall scene by ID (fires when the ID changes)", "int", 0, 9999),
     Parameter("blackout", "Blackout (on when >= 0.5)", "bool", 0.0, 1.0),
 ]}
 

@@ -47,7 +47,10 @@ from .engine import DmxEngine
 from .fixture import Fixture, FixtureState
 from .mapping import PARAMETERS, Mapping, MappingTable
 from .osc_server import OscServer
+from .scenes import MAX_SCENE_ID, PlaylistItem, SceneManager
 from .preview import FixturePreview, speed_text
+
+STOPPED_SPEED = 128  # DMX value for a stopped effect (channel 17)
 
 PROTOCOL_CHOICES = [("Art-Net", "artnet"), ("sACN (E1.31)", "sacn")]
 MODE_CHOICES = [("Basic (27 channels)", "basic"), ("Extended (243 channels)", "extended")]
@@ -81,6 +84,8 @@ class MainWindow(QMainWindow):
         self._osc: OscServer | None = None
         self._pulse_index = 0
         self._mapping_table = MappingTable(settings.mappings)
+        self._scenes = SceneManager(engine, settings.scenes, settings.playlist)
+        self._seen_scene_version = self._scenes.version
         self._loading_mapping = False
         self._learn_start_count = 0
 
@@ -92,6 +97,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_pixels_tab(), "Pixels")
         tabs.addTab(self._build_presets_tab(), "Presets")
         tabs.addTab(self._build_mapping_tab(), "OSC mapping")
+        tabs.addTab(self._build_scenes_tab(), "Scenes")
         tabs.addTab(self._build_fixtures_tab(), "Fixtures")
         tabs.addTab(self._build_network_tab(), "Network")
 
@@ -117,6 +123,11 @@ class MainWindow(QMainWindow):
         self._refresh_presets()
         self._refresh_fixtures_table()
         self._refresh_mapping_table()
+        self._refresh_scenes()
+
+        self._scene_timer = QTimer(self)
+        self._scene_timer.timeout.connect(self._update_scene_playback)
+        self._scene_timer.start(100)
 
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self._update_status)
@@ -274,7 +285,13 @@ class MainWindow(QMainWindow):
 
         self.fx_speed_label = QLabel()
         self.fx_speed = self._slider(0, 255, self._on_fx_speed)
-        form.addRow(self.fx_speed_label, self.fx_speed)
+        stop = QPushButton("Stop")
+        stop.setToolTip("Set the speed back to the stopped position (128)")
+        stop.clicked.connect(lambda: self.fx_speed.setValue(STOPPED_SPEED))
+        speed_row = QHBoxLayout()
+        speed_row.addWidget(self.fx_speed, 1)
+        speed_row.addWidget(stop)
+        form.addRow(self.fx_speed_label, speed_row)
 
         self.fx_sync = self._combo(FX_SYNC_CHOICES, lambda v: self._change(fx_sync=v))
         form.addRow("Sync", self.fx_sync)
@@ -497,6 +514,105 @@ class MainWindow(QMainWindow):
         spin.setDecimals(3)
         spin.setValue(value)
         return spin
+
+    def _build_scenes_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        columns = QHBoxLayout()
+
+        # Left: the scene library
+        library = QGroupBox("Scenes")
+        vbox = QVBoxLayout(library)
+        self.scene_table = QTableWidget(0, 4)
+        self.scene_table.setHorizontalHeaderLabels(["ID", "Name", "Fixtures", "Master"])
+        self.scene_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.scene_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.scene_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.scene_table.horizontalHeader().setStretchLastSection(True)
+        vbox.addWidget(self.scene_table, 1)
+
+        form = QFormLayout()
+        self.scene_id_spin = QSpinBox()
+        self.scene_id_spin.setRange(0, MAX_SCENE_ID)
+        self.scene_name_edit = QLineEdit()
+        self.scene_name_edit.setPlaceholderText("Name (optional)")
+        form.addRow("Scene ID", self.scene_id_spin)
+        form.addRow("Name", self.scene_name_edit)
+        vbox.addLayout(form)
+
+        row = QHBoxLayout()
+        for label, handler, tip in (
+            ("Store current look", self._store_scene, "Save the current look as this ID. Replaces any scene with the same ID."),
+            ("Recall", self._recall_scene, "Play the selected scene now."),
+            ("Rename", self._rename_scene, "Change the name of the selected scene."),
+            ("Delete", self._delete_scene, "Delete the selected scene and remove it from the playlist."),
+        ):
+            button = QPushButton(label)
+            button.setToolTip(tip)
+            button.clicked.connect(handler)
+            row.addWidget(button)
+        vbox.addLayout(row)
+        columns.addWidget(library, 1)
+
+        # Right: the playlist and playback
+        playlist_box = QGroupBox("Playlist")
+        vbox = QVBoxLayout(playlist_box)
+        self.playlist_list = QListWidget()
+        vbox.addWidget(self.playlist_list, 1)
+
+        form = QFormLayout()
+        self.playlist_scene_combo = QComboBox()
+        self.playlist_hold = QDoubleSpinBox()
+        self.playlist_hold.setRange(0, 3600)
+        self.playlist_hold.setDecimals(1)
+        self.playlist_hold.setSuffix(" s")
+        self.playlist_hold.setToolTip("Time before auto-advance. 0 = wait for Next.")
+        form.addRow("Scene", self.playlist_scene_combo)
+        form.addRow("Hold", self.playlist_hold)
+        vbox.addLayout(form)
+
+        edit = QHBoxLayout()
+        for label, handler in (
+            ("Add", self._playlist_add),
+            ("Update hold", self._playlist_update_hold),
+            ("Remove", self._playlist_remove),
+            ("Up", lambda: self._playlist_move(-1)),
+            ("Down", lambda: self._playlist_move(1)),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            edit.addWidget(button)
+        vbox.addLayout(edit)
+
+        play = QHBoxLayout()
+        for label, handler in (
+            ("Previous", lambda: self._playlist_step(-1)),
+            ("Go", self._playlist_go),
+            ("Next", lambda: self._playlist_step(1)),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            play.addWidget(button)
+        vbox.addLayout(play)
+
+        self.auto_advance_box = QCheckBox("Auto-advance (uses hold times)")
+        self.auto_advance_box.toggled.connect(lambda on: setattr(self._scenes, "auto_advance", on))
+        vbox.addWidget(self.auto_advance_box)
+        self.now_playing_label = QLabel("Nothing playing.")
+        self.now_playing_label.setWordWrap(True)
+        vbox.addWidget(self.now_playing_label)
+        columns.addWidget(playlist_box, 1)
+
+        layout.addLayout(columns, 1)
+        note = QLabel(
+            "OSC: /martin/scene <id> recalls a scene (send the ID as the value). "
+            "/martin/playlist/next, /martin/playlist/prev and /martin/playlist/go <position> step through the playlist. "
+            "A scene stores every fixture's settings and the master level, not blackout. "
+            "Recall is instant (no fade)."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        return page
 
     def _build_presets_tab(self) -> QWidget:
         page = QWidget()
@@ -909,7 +1025,7 @@ class MainWindow(QMainWindow):
             try:
                 net = self._settings.network
                 self._osc = OscServer(self._engine, net.osc_port, host=net.osc_host,
-                                      mappings=self._mapping_table)
+                                      mappings=self._mapping_table, scenes=self._scenes)
                 self._osc.start()
             except OSError as exc:
                 self.network_status.setText(f"OSC could not start: {exc}")
@@ -1053,6 +1169,8 @@ class MainWindow(QMainWindow):
             presets=self._settings.presets,
             mappings=self._settings.mappings,
             master=self._engine.master,
+            scenes=self._scenes.scenes,
+            playlist=self._scenes.playlist,
         )
 
     def _persist(self) -> None:
@@ -1111,16 +1229,160 @@ class MainWindow(QMainWindow):
         self._engine.reconfigure(settings.network)
         self._engine.set_fixtures(settings.fixtures)
         self._mapping_table.set(settings.mappings)
+        self._scenes.set_content(settings.scenes, settings.playlist)
         self._index = 0
         self._refresh_fixture_list()
         self._load_controls()
         self._refresh_presets()
         self._refresh_fixtures_table()
         self._refresh_mapping_table()
+        self._refresh_scenes()
         self._load_network_widgets(settings.network)
         self._sync_top_bar()
         self._restart_osc()
         self._persist()
+
+    # --- scenes and playlist ---------------------------------------------------
+
+    def _refresh_scenes(self) -> None:
+        scenes = self._scenes.scenes
+        self.scene_table.setRowCount(0)
+        for scene in scenes:
+            row = self.scene_table.rowCount()
+            self.scene_table.insertRow(row)
+            cells = [str(scene.id), scene.name, str(len(scene.fixtures)), f"{round(scene.master * 100)} %"]
+            for column, text in enumerate(cells):
+                self.scene_table.setItem(row, column, QTableWidgetItem(text))
+
+        self.playlist_scene_combo.clear()
+        for scene in scenes:
+            self.playlist_scene_combo.addItem(f"{scene.id}  {scene.name}".rstrip(), scene.id)
+
+        self.playlist_list.clear()
+        for number, item in enumerate(self._scenes.playlist, start=1):
+            name = self._scene_name(item.scene_id)
+            hold = f"  hold {item.hold:g} s" if item.hold > 0 else ""
+            self.playlist_list.addItem(f"{number}. #{item.scene_id} {name}{hold}")
+        self._update_now_playing()
+
+    def _scene_name(self, scene_id: int) -> str:
+        scene = self._scenes.get(scene_id)
+        return scene.name if scene else "(missing)"
+
+    def _selected_scene_id(self) -> int | None:
+        row = self.scene_table.currentRow()
+        if row < 0:
+            return None
+        return int(self.scene_table.item(row, 0).text())
+
+    def _store_scene(self) -> None:
+        scene_id = self.scene_id_spin.value()
+        name = self.scene_name_edit.text().strip() or f"Scene {scene_id}"
+        self._scenes.store(scene_id, name)
+        self._refresh_scenes()
+        self._persist()
+        self.statusBar().showMessage(f"Stored scene {scene_id}: {name}", 4000)
+
+    def _recall_scene(self) -> None:
+        scene_id = self._selected_scene_id()
+        if scene_id is None:
+            scene_id = self.scene_id_spin.value()
+        if not self._scenes.recall(scene_id):
+            self.statusBar().showMessage(f"No scene with ID {scene_id}", 4000)
+        self._update_now_playing()
+
+    def _rename_scene(self) -> None:
+        scene_id = self._selected_scene_id()
+        if scene_id is None:
+            self.statusBar().showMessage("Select a scene in the table first", 4000)
+            return
+        current = self._scene_name(scene_id)
+        name, ok = QInputDialog.getText(self, "Rename scene", f"New name for scene #{scene_id}:", text=current)
+        name = name.strip()
+        if not ok or not name:
+            return
+        self._scenes.rename(scene_id, name)
+        self._refresh_scenes()
+        self._persist()
+
+    def _delete_scene(self) -> None:
+        scene_id = self._selected_scene_id()
+        if scene_id is None:
+            return
+        self._scenes.delete(scene_id)
+        self._refresh_scenes()
+        self._persist()
+
+    def _playlist_items(self) -> list[PlaylistItem]:
+        return self._scenes.playlist
+
+    def _commit_playlist(self, items: list[PlaylistItem], select: int | None = None) -> None:
+        self._scenes.set_playlist(items)
+        self._refresh_scenes()
+        if select is not None and 0 <= select < self.playlist_list.count():
+            self.playlist_list.setCurrentRow(select)
+        self._persist()
+
+    def _playlist_add(self) -> None:
+        scene_id = self.playlist_scene_combo.currentData()
+        if scene_id is None:
+            return
+        items = self._playlist_items() + [PlaylistItem(scene_id, self.playlist_hold.value())]
+        self._commit_playlist(items, select=len(items) - 1)
+
+    def _playlist_update_hold(self) -> None:
+        row = self.playlist_list.currentRow()
+        items = self._playlist_items()
+        if 0 <= row < len(items):
+            items[row] = PlaylistItem(items[row].scene_id, self.playlist_hold.value())
+            self._commit_playlist(items, select=row)
+
+    def _playlist_remove(self) -> None:
+        row = self.playlist_list.currentRow()
+        items = self._playlist_items()
+        if 0 <= row < len(items):
+            del items[row]
+            self._commit_playlist(items, select=min(row, len(items) - 1))
+
+    def _playlist_move(self, delta: int) -> None:
+        row = self.playlist_list.currentRow()
+        items = self._playlist_items()
+        target = row + delta
+        if 0 <= row < len(items) and 0 <= target < len(items):
+            items[row], items[target] = items[target], items[row]
+            self._commit_playlist(items, select=target)
+
+    def _playlist_step(self, delta: int) -> None:
+        self._scenes.step(delta)
+        self._update_now_playing()
+
+    def _playlist_go(self) -> None:
+        row = self.playlist_list.currentRow()
+        if row < 0:
+            row = 0
+        self._scenes.go(row)
+        self._update_now_playing()
+
+    def _update_now_playing(self) -> None:
+        position = self._scenes.position
+        items = self._scenes.playlist
+        if position is None or position >= len(items):
+            self.now_playing_label.setText("Nothing playing.")
+            return
+        item = items[position]
+        self.now_playing_label.setText(
+            f"Now playing: {position + 1} of {len(items)}, scene #{item.scene_id} {self._scene_name(item.scene_id)}"
+        )
+
+    def _update_scene_playback(self) -> None:
+        self._scenes.tick()
+        if self._scenes.version != self._seen_scene_version:
+            # A scene was applied (by the UI, OSC, auto-advance or a mapping): refresh the controls.
+            self._seen_scene_version = self._scenes.version
+            self._load_controls()
+            self._update_now_playing()
+        if self.isVisible() and self.playlist_list.count() != len(self._scenes.playlist):
+            self._refresh_scenes()
 
     def _load_network_widgets(self, net: NetworkSettings) -> None:
         self.protocol_combo.setCurrentIndex(max(0, self.protocol_combo.findData(net.protocol)))
@@ -1134,6 +1396,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         self._status_timer.stop()
         self._preview_timer.stop()
+        self._scene_timer.stop()
         self._pulse_timer.stop()
         if self._osc is not None:
             self._osc.stop()
