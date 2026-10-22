@@ -9,6 +9,7 @@ from .fixture import Fixture
 from .mapping import Mapping
 from .scenes import PlaylistItem, Scene
 
+PREVIEW_MODES = ("docked", "popout", "hidden")
 SETTINGS_PATH = Path(__file__).resolve().parent.parent / "settings.json"
 
 
@@ -33,6 +34,7 @@ class Settings:
     scenes: list[Scene] = field(default_factory=list)         # saved looks, by ID
     playlist: list[PlaylistItem] = field(default_factory=list)  # playback order
     fade_time: float = 0.0                                    # seconds to fade into a scene; 0 = instant
+    preview_mode: str = "popout"                              # "docked", "popout" or "hidden"
 
     def to_dict(self) -> dict:
         return {
@@ -44,6 +46,7 @@ class Settings:
             "scenes": [s.to_dict() for s in self.scenes],
             "playlist": [item.to_dict() for item in self.playlist],
             "fade_time": self.fade_time,
+            "preview_mode": self.preview_mode,
         }
 
     @classmethod
@@ -55,7 +58,9 @@ class Settings:
         playlist = [PlaylistItem.from_dict(item) for item in data.get("playlist", [])]
         return cls(network=network, fixtures=fixtures, presets=data.get("presets", {}), mappings=mappings,
                    master=float(data.get("master", 1.0)), scenes=scenes, playlist=playlist,
-                   fade_time=max(0.0, float(data.get("fade_time", 0.0))))
+                   fade_time=max(0.0, float(data.get("fade_time", 0.0))),
+                   preview_mode=data.get("preview_mode", "popout")
+                   if data.get("preview_mode") in PREVIEW_MODES else "popout")
 
 
 def load_settings(path: Path = SETTINGS_PATH) -> Settings:

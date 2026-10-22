@@ -2054,7 +2054,7 @@
           "fx_speed": 128,
           "fx_sync": 36,
           "aura_strobe": 30,
-          "aura_intensity": 0.1,
+          "aura_intensity": 0.0,
           "aura_rgb": [
             1.0,
             0.22,
@@ -2849,5 +2849,6 @@
       "fade": 5.0
     }
   ],
-  "fade_time": 4.0
+  "fade_time": 5.0,
+  "preview_mode": "docked"
 }

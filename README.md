@@ -37,6 +37,7 @@ Network notes from the user guide:
 
 | Tab | What it does |
 |---|---|
+
 | Control | Beam and aura intensity, RGB, colour presets, colour temperature (CTC) |
 | Effects | Built-in effects in five groups from the manual (beam intensity, beam colour, aura intensity, aura colour, combined), speed, sync |
 | Strobe and flash | Beam special effect, aura strobe/shutter (kind and speed), beam flash duration and rate |
@@ -62,7 +63,7 @@ always opens with blackout off.
 
 The app also keeps its last state in `settings.json`, which it loads at startup.
 
-The **preview** panel above the tabs draws the selected fixture's beam and aura colour, intensity,
+The puppet silhouette on the left is always visible. Only its body (shoulders and skirt) is lit, with the beam colour and intensity. The puppet is always shown on the left at a fixed size. The **View > Preview** menu docks the preview above the controls, pops it out to a side window, or hides it. The default is pop out. The choice is saved with the settings. The **preview** panel above the tabs draws the selected fixture's beam and aura colour, intensity,
 blackout and effect name. It is a virtual fixture, so you can check the controls without hardware.
 It shows RGB colour only; built-in effects and colour presets appear as text, because the manual
 doesn't give their exact colours or timing.

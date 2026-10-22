@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtGui import QActionGroup, QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QListWidgetItem,
@@ -52,6 +52,7 @@ from .osc_server import OscServer
 from .presets import describe, make_preset, preset_state, scene_swatch_hex, swatch_hex
 from .scenes import MAX_SCENE_ID, PlaylistItem, SceneManager
 from .preview import FixturePreview, speed_text
+from .puppet import PuppetView
 
 STOPPED_SPEED = 128  # DMX value for a stopped effect (channel 17)
 
@@ -72,11 +73,23 @@ FX_SYNC_CHOICES = [
 ]
 
 
+class _PreviewWindow(QWidget):
+    """The side window for a popped-out preview. Closing it docks the preview back in the window."""
+
+    def __init__(self, on_close):
+        super().__init__(None, Qt.Window)
+        self._on_close = on_close
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        self._on_close()
+        event.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, settings: Settings, engine: DmxEngine, settings_path=None):
         super().__init__()
         self.setWindowTitle("Martin VDO Atomic Bold control")
-        self.resize(820, 700)
+        self.resize(1180, 760)
 
         self._settings = settings
         self._engine = engine
@@ -105,14 +118,29 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_network_tab(), "Network")
 
         self._project_path: Path | None = None
+        self._preview_mode = settings.preview_mode
+        self._preview_actions: list[tuple] = []
         self._build_menu()
 
         self.preview = FixturePreview()
+        # The puppet is always visible on the left; the controls and preview are on the right.
+        self.puppet_view = PuppetView()
+        # The preview lives in a holder so it can be docked above the tabs, popped out, or hidden (View menu).
+        self._preview_holder = QWidget()
+        self._preview_holder_layout = QVBoxLayout(self._preview_holder)
+        self._preview_holder_layout.setContentsMargins(0, 0, 0, 0)
+        self._preview_holder_layout.addWidget(self.preview)
+        self._preview_window: QWidget | None = None
+        right = QVBoxLayout()
+        right.addWidget(self._preview_holder)
+        right.addWidget(tabs, 1)
+        body = QHBoxLayout()
+        body.addWidget(self.puppet_view, 0, Qt.AlignTop)
+        body.addLayout(right, 5)
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.addLayout(self._build_top_bar())
-        layout.addWidget(self.preview)
-        layout.addWidget(tabs, 1)
+        layout.addLayout(body, 1)
         self.setCentralWidget(central)
         self.statusBar()
 
@@ -139,6 +167,7 @@ class MainWindow(QMainWindow):
         self._preview_timer = QTimer(self)
         self._preview_timer.timeout.connect(self._update_preview)
         self._preview_timer.start(50)
+        self._set_preview_mode(self._preview_mode, save=False)
 
     # --- layout ----------------------------------------------------------------
 
@@ -193,6 +222,43 @@ class MainWindow(QMainWindow):
             action = file_menu.addAction(label)
             action.setShortcut(shortcut)
             action.triggered.connect(handler)
+
+        view_menu = self.menuBar().addMenu("&View")
+        preview_menu = view_menu.addMenu("&Preview")
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for label, mode in (("Docked above the controls", "docked"),
+                            ("Pop out to a side window", "popout"),
+                            ("Hidden", "hidden")):
+            action = preview_menu.addAction(label)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, m=mode: self._set_preview_mode(m))
+            group.addAction(action)
+            self._preview_actions.append((action, mode))
+
+    def _set_preview_mode(self, mode: str, save: bool = True) -> None:
+        """Dock the preview above the controls, pop it out to its own window, or hide it."""
+        self._preview_mode = mode
+        if mode == "popout":
+            if self._preview_window is None:
+                self._preview_window = _PreviewWindow(on_close=lambda: self._set_preview_mode("docked"))
+                self._preview_window.setWindowTitle("Preview")
+                window_layout = QVBoxLayout(self._preview_window)
+                window_layout.setContentsMargins(8, 8, 8, 8)
+            self._preview_window.layout().addWidget(self.preview)
+            self._preview_holder.hide()
+            self._preview_window.resize(640, 240)
+            self._preview_window.show()
+        else:
+            if self._preview_window is not None:
+                self._preview_window.hide()
+            self._preview_holder_layout.addWidget(self.preview)
+            self._preview_holder.setVisible(mode == "docked")
+        self.preview.show()
+        for action, action_mode in self._preview_actions:
+            action.setChecked(action_mode == mode)
+        if save:
+            self._persist()
 
     def _slider(self, lo: int, hi: int, on_change) -> QSlider:
         slider = QSlider(Qt.Horizontal)
@@ -1114,6 +1180,7 @@ class MainWindow(QMainWindow):
         fixture = self._fixture
         self.preview.show_state(fixture.state, self._engine.blackout, fixture.mode == "extended",
                                 self._engine.master)
+        self.puppet_view.show_state(fixture.state, self._engine.blackout, self._engine.master)
         self._sync_top_bar()
         self._update_monitor()
 
@@ -1241,6 +1308,7 @@ class MainWindow(QMainWindow):
             scenes=self._scenes.scenes,
             playlist=self._scenes.playlist,
             fade_time=self._scenes.fade_time,
+            preview_mode=self._preview_mode,
         )
 
     def _persist(self) -> None:
@@ -1301,6 +1369,7 @@ class MainWindow(QMainWindow):
         self._mapping_table.set(settings.mappings)
         self._scenes.set_content(settings.scenes, settings.playlist)
         self._scenes.fade_time = settings.fade_time
+        self._set_preview_mode(settings.preview_mode, save=False)
         self.fade_spin.blockSignals(True)
         self.fade_spin.setValue(settings.fade_time)
         self.fade_spin.blockSignals(False)
@@ -1501,6 +1570,8 @@ class MainWindow(QMainWindow):
         self.osc_port_spin.setValue(net.osc_port)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        if self._preview_window is not None:
+            self._preview_window.hide()   # hide, not close: keeps the saved preview mode
         self._status_timer.stop()
         self._preview_timer.stop()
         self._scene_timer.stop()

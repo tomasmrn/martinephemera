@@ -15,7 +15,7 @@
       "address": 1,
       "mode": "extended",
       "state": {
-        "beam_intensity": 1.0,
+        "beam_intensity": 0.0,
         "beam_flash_duration": 255,
         "beam_flash_rate": 255,
         "beam_special_effect": 0,
@@ -32,7 +32,7 @@
         "fx_speed": 128,
         "fx_sync": 36,
         "aura_strobe": 30,
-        "aura_intensity": 0.9998574256896973,
+        "aura_intensity": 0.0,
         "aura_rgb": [
           1.0,
           0.22,
@@ -2052,7 +2052,7 @@
           "fx_speed": 128,
           "fx_sync": 36,
           "aura_strobe": 30,
-          "aura_intensity": 0.1,
+          "aura_intensity": 0.0,
           "aura_rgb": [
             1.0,
             0.22,
@@ -2847,5 +2847,6 @@
       "fade": 5.0
     }
   ],
-  "fade_time": 4.0
+  "fade_time": 5.0,
+  "preview_mode": "docked"
 }
