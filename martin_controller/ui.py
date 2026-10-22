@@ -630,7 +630,7 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(columns, 1)
         note = QLabel(
-            "OSC: /martin/scene <id> recalls a scene when the ID changes, so a steady stream does nothing. "
+            "OSC: /martin/scene <id> recalls a scene every time it is received (for manual buttons). "
             "/martin/scene/recall <id> recalls it every time (for buttons). "
             "/martin/playlist/next and /martin/playlist/prev step on a button press (value rising to 1). "
             "/martin/playlist/go <position> plays an item when the value changes. "

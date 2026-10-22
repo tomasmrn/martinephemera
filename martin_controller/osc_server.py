@@ -4,8 +4,9 @@ Built-in addresses (n = fixture number, 1-based, in the order shown in the Fixtu
 
   /martin/blackout              i  0 or 1
   /martin/master                f  master dimmer, 0.0-1.0
-  /martin/scene                 i  recall the scene with this ID when the ID changes (a steady stream does nothing)
-  /martin/scene/recall          i  recall the scene with this ID every time (use for buttons)
+  /martin/scene                 i  recall the scene with this ID every time it is received (for manual buttons)
+  /martin/scene/recall          i  recall the scene with this ID every time
+  /martin/scene/press           f i  (value, ID): recall the scene once per press (value rising to 0.5)
   /martin/scene/fade            f  fade time in seconds for scene recalls (0 = instant)
   /martin/playlist/next         f  next playlist item when the value rises to 0.5 or more (a button press)
   /martin/playlist/prev         f  previous playlist item when the value rises to 0.5 or more
@@ -187,12 +188,19 @@ class OscServer:
                 self._engine.master = float(args[0])
             return
         if self._scenes is not None and parts[1:] == ["scene"] and args:
-            # Recall only when the ID changes: a TouchDesigner stream repeats the same ID every frame.
-            if self._changed(address, int(args[0])):
-                self._scenes.recall(int(args[0]))
+            # Every message recalls the scene, so a button can recall the same scene again. A stream of the
+            # same ID will keep recalling it: use /martin/scene/press or the mapping for streamed control.
+            self._scenes.recall(int(args[0]))
             return
         if self._scenes is not None and parts[1:] == ["scene", "recall"] and args:
             self._scenes.recall(int(args[0]))
+            return
+        if self._scenes is not None and parts[1:] == ["scene", "press"] and len(args) >= 2:
+            # A button: args are (value, scene id). Recall once per press (the value rising to 0.5), however
+            # often the button sends. Each button is tracked separately by its scene ID.
+            scene_id = int(args[1])
+            if self._rising(f"{address}#{scene_id}", float(args[0])):
+                self._scenes.recall(scene_id)
             return
         if self._scenes is not None and parts[1:] == ["scene", "fade"] and args:
             self._scenes.fade_time = max(0.0, float(args[0]))
@@ -216,6 +224,13 @@ class OscServer:
         if not 0 <= index < len(self._engine.fixtures):
             return
         param = "/".join(parts[2:])
+        if param in _OSC_COMPONENTS and args:
+            # One colour channel at a time (for faders): the other two keep their current values.
+            field_name, component = _OSC_COMPONENTS[param]
+            if self._moved(address, _numbers(args)):
+                self._engine.modify_fixture(index, lambda st, f=field_name, c=component, v=float(args[0]): {
+                    f: _with_component(getattr(st, f), c, v)})
+            return
         values = _OSC_PARAMS.get(param)
         if values is None or len(args) < values[0]:
             return
@@ -237,4 +252,21 @@ _OSC_PARAMS = {
     "aura/rgb": (3, lambda r, g, b: {"aura_rgb": _rgb(r, g, b)}),
     "fx": (1, lambda v: {"fx": max(0, min(255, int(v)))}),
     "fx/speed": (1, lambda v: {"fx_speed": unit_to_u8(float(v))}),
+    "aura/preset": (1, lambda v: {"aura_color_preset": max(0, min(48, int(v)))}),
+    "beam/flash/duration": (1, lambda v: {"beam_flash_duration": max(0, min(255, int(v)))}),
+    "beam/flash/rate": (1, lambda v: {"beam_flash_rate": max(0, min(255, int(v)))}),
+    "beam/special": (1, lambda v: {"beam_special_effect": max(0, min(255, int(v)))}),
+    "aura/strobe": (1, lambda v: {"aura_strobe": max(0, min(255, int(v)))}),
 }
+
+# single colour channels: param -> (FixtureState field, component index)
+_OSC_COMPONENTS = {
+    "beam/red": ("beam_rgb", 0), "beam/green": ("beam_rgb", 1), "beam/blue": ("beam_rgb", 2),
+    "aura/red": ("aura_rgb", 0), "aura/green": ("aura_rgb", 1), "aura/blue": ("aura_rgb", 2),
+}
+
+
+def _with_component(rgb, index: int, value: float) -> tuple:
+    values = list(rgb)
+    values[index] = max(0.0, min(1.0, float(value)))
+    return tuple(values)

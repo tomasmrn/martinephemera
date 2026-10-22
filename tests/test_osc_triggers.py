@@ -31,15 +31,14 @@ class OscTriggerTests(unittest.TestCase):
     def _settle(self):
         time.sleep(0.15)
 
-    def test_steady_scene_stream_recalls_once_and_keeps_manual_changes(self):
+    def test_every_scene_message_recalls_the_scene(self):
         self.client.send_message("/martin/scene", 2)
         self._settle()
         self.assertEqual(self.engine.fixtures[0].state.fx, 2)
         self.engine.update_fixture(0, beam_intensity=0.5)      # a manual change after the scene
-        for _ in range(20):                                    # TouchDesigner keeps sending "2"
-            self.client.send_message("/martin/scene", 2)
+        self.client.send_message("/martin/scene", 2)           # the same button pressed again
         self._settle()
-        self.assertAlmostEqual(self.engine.fixtures[0].state.beam_intensity, 0.5)
+        self.assertAlmostEqual(self.engine.fixtures[0].state.beam_intensity, 0.8)
 
     def test_scene_id_change_recalls(self):
         self.client.send_message("/martin/scene", 1)

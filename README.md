@@ -92,8 +92,9 @@ OSC control (send the scene ID as the value):
 
 | Address | Value | Action |
 |---|---|---|
-| `/martin/scene` | scene ID | Recall the scene when the ID changes. A steady stream of the same ID does nothing |
+| `/martin/scene` | scene ID | Recall the scene every time it is received, so a manual button can recall it again. A steady stream of the same ID keeps recalling it, so use `/martin/scene/press` or the mapping for TouchDesigner |
 | `/martin/scene/recall` | scene ID | Recall the scene every time (for buttons) |
+| `/martin/scene/press` | value, scene ID | Recall the scene once per press (the value rising to 0.5). Use this for buttons: repeated messages from a held button do not re-trigger the scene |
 | `/martin/scene/fade` | seconds | Set the fade time for scene recalls (0 = instant) |
 | `/martin/playlist/next` | 1 (button press) | Next playlist item. Fires when the value rises to 0.5 or more |
 | `/martin/playlist/prev` | 1 (button press) | Previous playlist item. Fires when the value rises to 0.5 or more |
@@ -130,6 +131,24 @@ back to 'no function'. Settings apply to the selected fixture only.
 **sACN (E1.31)**: UDP port 5568. Target is blank for multicast (`239.255.x.x`), or a unicast IP.
 sACN has no universe 0, so set fixture universes to 1 or higher when using sACN. The status
 bar reports any universe that's invalid for the chosen protocol.
+
+## TouchOSC layout (phone)
+
+`tools\make_touchosc_layout.py` writes `tools\Martin_VDO_Atomic_Bold.tosc`, a landscape 1920 x 1080 layout:
+
+- **Every page:** three vertical faders (aura dimmer, beam dimmer, master dimmer) and a blackout toggle on the right.
+- **Manual:** effect number, effect speed (with a Stop button), beam special effect, beam flash duration and rate, and aura strobe.
+- **Light:** beam and aura red, green and blue, and the beam and aura colour presets.
+- **Scenes:** a 4 x 4 grid of buttons, one per scene ID 1-16. Each press sends `/martin/scene/recall <id>`.
+
+To use it:
+1. Run `.venv\Scripts\python tools\make_touchosc_layout.py`.
+2. Open the `.tosc` file in TouchOSC on the desktop, and send it to the phone.
+3. On the phone, set the connection host to this computer's IP address and the port to `8000`.
+4. In the app's Network tab, tick **Enable OSC listener** and set the listen address to `0.0.0.0`.
+
+The layout targets fixture 1. Change `FIXTURE` at the top of the script for another fixture number.
+The layout was built from the Hexler file format as the `tosclib` library describes it. It hasn't been opened in the TouchOSC editor yet, so the first import may need small adjustments.
 
 ## TouchDesigner (OSC in)
 
