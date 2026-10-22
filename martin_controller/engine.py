@@ -31,7 +31,6 @@ class DmxEngine:
         self._master = max(0.0, min(1.0, master))
         # Parameters changed by hand (OSC, mappings, the UI) since the last scene. They win over a fade.
         self._overrides: dict[int, set[str]] = {}
-        self._master_overridden = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error: str | None = None
@@ -88,25 +87,11 @@ class DmxEngine:
         """Forget all manual changes. Called when a scene starts, because the scene now sets everything."""
         with self._lock:
             self._overrides.clear()
-        self._master_overridden = False
 
     def overrides(self, index: int) -> frozenset[str]:
         """Fields of fixture `index` changed by hand since the last scene or preset load."""
         with self._lock:
             return frozenset(self._overrides.get(index, ()))
-
-    @property
-    def master_overridden(self) -> bool:
-        return self._master_overridden
-
-    def set_master_from_scene(self, value: float, keep_override: bool = False) -> None:
-        """Set the master level from a scene. Unless `keep_override` is set (a fade in progress),
-        this also clears a manual master change, because the scene now sets the master."""
-        if keep_override and self._master_overridden:
-            return
-        if not keep_override:
-            self._master_overridden = False
-        self._master = max(0.0, min(1.0, float(value)))
 
     def _mark(self, index: int, changes) -> None:
         """Record which fields were changed by hand. Call with the lock held."""
@@ -120,7 +105,6 @@ class DmxEngine:
     def master(self, value: float) -> None:
         """Master dimmer, 0.0-1.0. Scales every fixture's beam and aura intensity."""
         self._master = max(0.0, min(1.0, float(value)))
-        self._master_overridden = True
 
     @property
     def blackout(self) -> bool:

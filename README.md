@@ -3,6 +3,10 @@
 A Python desktop app that drives Martin VDO Atomic Bold fixtures over Art-Net,
 with a GUI for the built-in effects and colour presets, and OSC input for TouchOSC.
 
+## Download (Windows, no Python needed)
+
+See [PACKAGING.md](PACKAGING.md) for how to run the packaged app and how to build it.
+
 ## Setup
 
 ```bash
@@ -77,7 +81,7 @@ per group, and each one snaps to the nearest effect in its group.
 
 ## Scenes and playlists
 
-A **scene** is a saved look: every fixture's settings plus the master level. Each scene has a numeric ID
+A **scene** is a saved look: every fixture's settings. The master dimmer is not saved in scenes or presets; it stays as a live control. Each scene has a numeric ID
 (0 to 9999) and a name. Storing a scene with an existing ID replaces it. Blackout is not part of a scene.
 Playlist items fade into their scene for their own fade time. Direct recalls (the Recall button and `/martin/scene`) use the **Fade (direct)** setting in the Scenes tab, which is 0 (instant) by default.
 A fade blends intensities, RGB colours, the aura pixels, and the flash timing. Effect numbers, colour presets,

@@ -1,6 +1,7 @@
 """Settings file: network options, fixtures and user presets, stored as JSON."""
 
 import json
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -10,7 +11,14 @@ from .mapping import Mapping
 from .scenes import PlaylistItem, Scene
 
 PREVIEW_MODES = ("docked", "popout", "hidden")
-SETTINGS_PATH = Path(__file__).resolve().parent.parent / "settings.json"
+def _app_folder() -> Path:
+    """The folder that holds settings.json: next to the .exe when packaged, else the project folder."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+SETTINGS_PATH = _app_folder() / "settings.json"
 
 
 @dataclass

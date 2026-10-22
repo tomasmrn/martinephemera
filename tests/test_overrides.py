@@ -23,13 +23,6 @@ class OverrideRecordingTests(unittest.TestCase):
         self.assertEqual(self.engine.overrides(0), frozenset())
         self.assertEqual(self.engine.overrides(1), {"beam_intensity"})
 
-    def test_master_change_is_an_override(self):
-        self.engine.master = 0.2
-        self.assertTrue(self.engine.master_overridden)
-        self.engine.set_master_from_scene(0.9)
-        self.assertFalse(self.engine.master_overridden)
-        self.assertAlmostEqual(self.engine.master, 0.9)
-
 
 class SceneOverrideTests(unittest.TestCase):
     def setUp(self):
@@ -65,15 +58,6 @@ class SceneOverrideTests(unittest.TestCase):
         self.assertEqual(self.engine.overrides(0), frozenset())
         self.assertAlmostEqual(self.engine.fixtures[0].state.beam_intensity, 0.3, places=3)
 
-    def test_master_change_during_fade_wins(self):
-        self.engine.master = 0.4
-        self.scenes.store(2, "Full")
-        self.engine.master = 1.0
-        self.scenes.recall(2)
-        self.engine.master = 0.2                                # manual master change mid-fade
-        self.scenes.update_fade(self.scenes._fade["started"] + 2.5)
-        self.assertAlmostEqual(self.engine.master, 0.2)
-        self.assertTrue(self.engine.master_overridden)
 
 
 if __name__ == "__main__":

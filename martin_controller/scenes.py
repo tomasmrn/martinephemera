@@ -1,7 +1,7 @@
 """Scenes (saved looks, each with an ID) and playlists (ordered scene IDs) for playback.
 
-A scene stores every fixture's FixtureState, in fixture order, plus the master level.
-Blackout is not part of a scene. Recalling a scene replaces the fixture states straight away.
+A scene stores every fixture's FixtureState, in fixture order.
+The master dimmer and blackout are live controls, so they are not part of a scene. Recalling a scene replaces the fixture states straight away.
 """
 
 import threading
@@ -18,10 +18,9 @@ class Scene:
     id: int
     name: str = ""
     fixtures: list[dict] = field(default_factory=list)   # FixtureState dicts, in fixture order
-    master: float = 1.0
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "name": self.name, "fixtures": self.fixtures, "master": self.master}
+        return {"id": self.id, "name": self.name, "fixtures": self.fixtures}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Scene":
@@ -29,7 +28,7 @@ class Scene:
         if not 0 <= scene_id <= MAX_SCENE_ID:
             raise ValueError(f"scene id must be 0-{MAX_SCENE_ID}, got {scene_id}")
         return cls(id=scene_id, name=str(data.get("name", "")),
-                   fixtures=list(data.get("fixtures", [])), master=float(data.get("master", 1.0)))
+                   fixtures=list(data.get("fixtures", [])))
 
 
 @dataclass
@@ -142,7 +141,6 @@ class SceneManager:
             id=scene_id,
             name=name,
             fixtures=[f.state.to_dict() for f in self._engine.fixtures],
-            master=self._engine.master,
         )
         with self._lock:
             self._scenes[scene_id] = scene
@@ -231,7 +229,6 @@ class SceneManager:
                 self._engine.replace_fixture(
                     index, replace(fixtures[index], state=FixtureState.from_dict(state))
                 )
-            self._engine.set_master_from_scene(scene.master)
             return
 
         # Start a fade from whatever is showing now (even if another fade was running).
@@ -243,8 +240,6 @@ class SceneManager:
                 "duration": duration,
                 "starts": [f.state for f in fixtures],
                 "targets": targets,
-                "master_start": self._engine.master,
-                "master_end": scene.master,
             }
         self.update_fade()
 
@@ -270,9 +265,6 @@ class SceneManager:
             if target is None or index >= len(fixtures):
                 continue
             self._engine.fade_fixture(index, _fade_state_maker(start, target, t))
-        self._engine.set_master_from_scene(
-            _mix(fade["master_start"], fade["master_end"], max(0.0, min(1.0, t))), keep_override=True
-        )
         if t >= 1.0:
             with self._fade_lock:
                 if self._fade is fade:

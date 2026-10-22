@@ -17,22 +17,29 @@ def make_engine():
 
 
 class SceneStoreTests(unittest.TestCase):
-    def test_store_and_recall_restores_every_fixture_and_master(self):
+    def test_store_and_recall_restores_every_fixture(self):
         engine = make_engine()
         scenes = SceneManager(engine)
         engine.update_fixture(0, fx=12, beam_intensity=0.3)
         engine.update_fixture(1, aura_strobe=120)
-        engine.master = 0.4
         scenes.store(5, "Intro")
 
         engine.update_fixture(0, fx=0, beam_intensity=1.0)
         engine.update_fixture(1, aura_strobe=30)
-        engine.master = 1.0
         self.assertTrue(scenes.recall(5))
         self.assertEqual(engine.fixtures[0].state.fx, 12)
         self.assertAlmostEqual(engine.fixtures[0].state.beam_intensity, 0.3)
         self.assertEqual(engine.fixtures[1].state.aura_strobe, 120)
-        self.assertAlmostEqual(engine.master, 0.4)
+
+    def test_recall_leaves_the_master_dimmer_alone(self):
+        engine = make_engine()
+        scenes = SceneManager(engine)
+        engine.master = 0.4
+        scenes.store(5, "Intro")
+        engine.master = 0.9                              # the master is a live control, not part of the scene
+        scenes.recall(5)
+        self.assertAlmostEqual(engine.master, 0.9)
+        self.assertNotIn("master", scenes.get(5).to_dict())
 
     def test_recall_unknown_id_does_nothing(self):
         self.assertFalse(SceneManager(make_engine()).recall(999))
@@ -108,7 +115,7 @@ class PlaylistTests(unittest.TestCase):
 class SettingsRoundTripTests(unittest.TestCase):
     def test_scenes_and_playlist_survive_json(self):
         settings = Settings(
-            scenes=[Scene(id=7, name="Chorus", fixtures=[FixtureState(fx=4).to_dict()], master=0.5)],
+            scenes=[Scene(id=7, name="Chorus", fixtures=[FixtureState(fx=4).to_dict()])],
             playlist=[PlaylistItem(7, hold=12.5)],
         )
         loaded = Settings.from_dict(json.loads(json.dumps(settings.to_dict())))

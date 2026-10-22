@@ -58,16 +58,14 @@ class SteadyStreamTests(unittest.TestCase):
         self._settle()
         self.assertAlmostEqual(self.engine.fixtures[0].state.beam_intensity, 0.3, places=3)
 
-    def test_steady_master_stream_does_not_overwrite_a_scene(self):
-        self.client.send_message("/martin/master", 0.5)   # the master is at 0.5 from the controller
+    def test_scene_recall_does_not_change_the_master(self):
+        self.client.send_message("/martin/master", 0.5)
         self._settle()
-        self.engine.master = 1.0
-        self.scenes.store(2, "Full")                      # the scene holds master 1.0
-        self.scenes.recall(2)
-        for _ in range(20):
-            self.client.send_message("/martin/master", 0.5)
+        self.scenes.recall(1)
+        self.assertAlmostEqual(self.engine.master, 0.5)
+        self.client.send_message("/martin/master", 0.7)  # OSC still moves the master after a scene
         self._settle()
-        self.assertAlmostEqual(self.engine.master, 1.0)
+        self.assertAlmostEqual(self.engine.master, 0.7, places=5)
 
 
 if __name__ == "__main__":

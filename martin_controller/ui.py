@@ -592,8 +592,8 @@ class MainWindow(QMainWindow):
         # Left: the scene library
         library = QGroupBox("Scenes")
         vbox = QVBoxLayout(library)
-        self.scene_table = QTableWidget(0, 4)
-        self.scene_table.setHorizontalHeaderLabels(["ID", "Name", "Fixtures", "Master"])
+        self.scene_table = QTableWidget(0, 3)
+        self.scene_table.setHorizontalHeaderLabels(["ID", "Name", "Fixtures"])
         self.scene_table.setIconSize(QPixmap(14, 14).size())
         self.scene_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.scene_table.setSelectionMode(QTableWidget.SingleSelection)
@@ -1363,7 +1363,7 @@ class MainWindow(QMainWindow):
         """Replace the whole working state with `settings` and refresh every tab."""
         self._settings = settings
         self._engine.blackout = False
-        self._engine.set_master_from_scene(settings.master)
+        self._engine.master = settings.master
         self._engine.reconfigure(settings.network)
         self._engine.set_fixtures(settings.fixtures)
         self._mapping_table.set(settings.mappings)
@@ -1393,7 +1393,7 @@ class MainWindow(QMainWindow):
         for scene in scenes:
             row = self.scene_table.rowCount()
             self.scene_table.insertRow(row)
-            cells = [str(scene.id), scene.name, str(len(scene.fixtures)), f"{round(scene.master * 100)} %"]
+            cells = [str(scene.id), scene.name, str(len(scene.fixtures))]
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 if column == 0:
@@ -1541,8 +1541,6 @@ class MainWindow(QMainWindow):
 
     def _update_overrides(self) -> None:
         names = sorted(self._engine.overrides(self._index))
-        if self._engine.master_overridden:
-            names.append("master dimmer")
         if names:
             shown = ", ".join(n.replace("_", " ") for n in names)
             self.override_label.setText(f"Changed by hand since the last scene: {shown}. Recall a scene to reset.")
